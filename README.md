@@ -20,7 +20,18 @@ Template-driven Seedance 2.0 video generation MVP.
 1. Install dependencies: `pnpm install`
 2. Rebuild script-based dependencies if needed: `pnpm rebuild`
 3. Set `DATABASE_URL=file:./dev.db`
-4. Generate Prisma client: `pnpm --filter @xvideo/server exec prisma generate`
-5. Push schema: `DATABASE_URL=file:./dev.db pnpm --filter @xvideo/server exec prisma db push`
-6. Seed data: `DATABASE_URL=file:./dev.db pnpm --filter @xvideo/server exec ts-node prisma/seed.ts`
-7. Start all apps: `pnpm dev`
+4. Set provider env vars:
+   - `ARK_API_KEY=<your-ark-api-key>`
+   - `SEEDANCE_MODEL=<your-ark-endpoint-id-or-seedance-model-id>`
+   - optional `ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3`
+   - optional `SEEDANCE_TASK_PATH=/contents/generations/tasks`
+5. Generate Prisma client: `pnpm --filter @xvideo/server exec prisma generate`
+6. Push schema: `DATABASE_URL=file:./dev.db pnpm --filter @xvideo/server exec prisma db push`
+7. Seed data: `DATABASE_URL=file:./dev.db pnpm --filter @xvideo/server exec ts-node prisma/seed.ts`
+8. Start all apps: `pnpm dev`
+
+## Seedance Notes
+
+- Official Ark auth docs use `ARK_API_KEY` and base URL `https://ark.cn-beijing.volces.com/api/v3`
+- This project calls the Seedance task API through `POST/GET /contents/generations/tasks`
+- `SEEDANCE_MODEL` should point to the video model or endpoint you have enabled in Ark

@@ -67,6 +67,8 @@ model GenerationScene {
   status         String
   parentSceneId  String?
   providerTaskId String?
+  resultUrl      String?
+  providerError  String?
   job            GenerationJob @relation(fields: [jobId], references: [id])
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
