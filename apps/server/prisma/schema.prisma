@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Template {
+  id              String            @id @default(cuid())
+  name            String
+  slug            String            @unique
+  description     String
+  defaultStrategy String
+  versions        TemplateVersion[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+model TemplateVersion {
+  id              String          @id @default(cuid())
+  templateId      String
+  versionNumber   Int
+  promptSkeleton  String
+  inputSchemaJson String
+  strategyJson    String
+  template        Template        @relation(fields: [templateId], references: [id])
+  jobs            GenerationJob[]
+  createdAt       DateTime        @default(now())
+}
+
+model MediaAsset {
+  id          String   @id @default(cuid())
+  kind        String
+  filename    String
+  mimeType    String
+  storagePath String
+  width       Int?
+  height      Int?
+  createdAt   DateTime @default(now())
+}
+
+model GenerationJob {
+  id                String              @id @default(cuid())
+  clientId          String
+  templateVersionId String
+  strategy          String
+  script            String
+  status            String
+  finalVideoId      String?
+  failureSummary    String?
+  templateVersion   TemplateVersion     @relation(fields: [templateVersionId], references: [id])
+  scenes            GenerationScene[]
+  attempts          GenerationAttempt[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model GenerationScene {
+  id             String        @id @default(cuid())
+  jobId          String
+  sequenceIndex  Int
+  strategy       String
+  title          String
+  prompt         String
+  status         String
+  parentSceneId  String?
+  providerTaskId String?
+  job            GenerationJob @relation(fields: [jobId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model GenerationAttempt {
+  id              String        @id @default(cuid())
+  jobId           String
+  attemptNumber   Int
+  providerName    String
+  requestPayload  String
+  responsePayload String?
+  resultStatus    String
+  job             GenerationJob @relation(fields: [jobId], references: [id])
+  createdAt       DateTime      @default(now())
+}
+
+model GeneratedVideo {
+  id          String   @id @default(cuid())
+  storagePath String
+  durationMs  Int?
+  width       Int?
+  height      Int?
+  posterPath  String?
+  createdAt   DateTime @default(now())
+}
