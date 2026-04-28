@@ -65,6 +65,8 @@ type RecentJob = {
   templateName: string;
   status: string;
   scriptPreview: string;
+  strategy: GenerationStrategy;
+  subject: string;
   resultUrl?: string | null;
   updatedAt: string;
 };
@@ -231,6 +233,10 @@ function persistRecentJobs(jobs: RecentJob[]) {
 }
 
 function getTemplateDisplay(template: Template) {
+  if (/[\u4e00-\u9fff]/.test(template.name) || /[\u4e00-\u9fff]/.test(template.description)) {
+    return { name: template.name, description: template.description };
+  }
+
   const mapped =
     templateTextMap[template.slug ?? ""] ??
     templateTextMap[template.id] ??
@@ -265,6 +271,7 @@ export function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<UploadedReferenceImage[]>([]);
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([]);
+  const [recentJobFilter, setRecentJobFilter] = useState<"all" | "succeeded" | "running" | "failed">("all");
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? null,
@@ -305,6 +312,15 @@ export function App() {
 
   const statusStepIndex = statusSteps.findIndex((step) => step.key === job?.status);
   const currentResultUrl = job?.finalVideo?.url ?? job?.resultUrl ?? null;
+  const currentJobRecord = job ? recentJobs.find((item) => item.id === job.id) ?? null : null;
+  const resultSummary = [
+    { label: "主体", value: subject || "未填写" },
+    { label: "场景", value: scene || "未填写" },
+    { label: "风格", value: tone || "未填写" }
+  ];
+  const filteredRecentJobs = recentJobs.filter((item) =>
+    recentJobFilter === "all" ? true : item.status === recentJobFilter
+  );
 
   useEffect(() => {
     setRecentJobs(loadRecentJobs());
@@ -360,6 +376,8 @@ export function App() {
       templateName: selectedTemplateDisplay?.name ?? "视频模板",
       status: job.status,
       scriptPreview: composedScript,
+      strategy: effectiveStrategy,
+      subject,
       resultUrl: job.finalVideo?.url ?? job.resultUrl ?? null,
       updatedAt: new Date().toISOString()
     };
@@ -369,7 +387,7 @@ export function App() {
       persistRecentJobs(merged);
       return merged;
     });
-  }, [composedScript, job, selectedTemplateDisplay?.name]);
+  }, [composedScript, effectiveStrategy, job, selectedTemplateDisplay?.name, subject]);
 
   async function handleReferenceImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const fileList = event.target.files;
@@ -497,16 +515,196 @@ export function App() {
 
             <div className="grid gap-4 md:grid-cols-[1fr_0.78fr]">
               <div className="rounded-[1.75rem] border border-white/10 bg-black/25 p-5">
-                <p className="text-xs uppercase tracking-[0.25em] text-stone-500">生成预览</p>
-                <div className="mt-4 aspect-[4/5] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.18),_transparent_30%),linear-gradient(180deg,_rgba(28,25,23,0.95),_rgba(10,10,10,0.98))] p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs uppercase tracking-[0.25em] text-stone-500">结果舞台</p>
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs ${getStatusBadge(
+                      job?.status ?? "draft"
+                    )}`}
+                  >
+                    {job ? getStatusLabel(job.status) : "等待生成"}
+                  </span>
+                </div>
+
+                <div className="mt-4 overflow-hidden rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.18),_transparent_30%),linear-gradient(180deg,_rgba(28,25,23,0.95),_rgba(10,10,10,0.98))] p-5">
                   {currentResultUrl ? (
-                    <video
-                      src={currentResultUrl}
-                      controls
-                      className="h-full w-full rounded-[1.25rem] object-cover"
-                    />
+                    <div className="space-y-5">
+                      <div className="aspect-[4/5] overflow-hidden rounded-[1.25rem] border border-white/10 bg-black/40">
+                        <video
+                          src={currentResultUrl}
+                          controls
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+                        <div className="rounded-[1.25rem] border border-white/10 bg-black/20 p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">作品信息</p>
+                          <div className="mt-4 space-y-3 text-sm">
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-stone-500">模板</span>
+                              <span className="max-w-[60%] text-right text-stone-200">
+                                {selectedTemplateDisplay?.name ?? "未选择"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-stone-500">生成方式</span>
+                              <span className="max-w-[60%] text-right text-stone-200">
+                                {getStrategyLabel(effectiveStrategy)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-stone-500">状态</span>
+                              <span className={`max-w-[60%] text-right ${getStatusTone(job?.status ?? "draft")}`}>
+                                {job ? getStatusLabel(job.status) : "等待生成"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-stone-500">参考图数量</span>
+                              <span className="max-w-[60%] text-right text-stone-200">
+                                {uploadedImages.length} 张
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-stone-500">最近更新</span>
+                              <span className="max-w-[60%] text-right text-stone-200">
+                                {currentJobRecord ? formatTimeLabel(currentJobRecord.updatedAt) : "刚刚"}
+                              </span>
+                            </div>
+                            <div className="border-t border-white/10 pt-3">
+                              <p className="text-stone-500">任务 ID</p>
+                              <p className="mt-2 break-all text-stone-200">{job?.id}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-[1.25rem] border border-white/10 bg-black/20 p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">成片摘要</p>
+                          <div className="mt-4 space-y-3">
+                            {resultSummary.map((item) => (
+                              <div
+                                key={item.label}
+                                className="rounded-[1rem] border border-white/10 bg-white/[0.03] p-3"
+                              >
+                                <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                                  {item.label}
+                                </p>
+                                <p className="mt-2 text-sm leading-7 text-stone-200">{item.value}</p>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            <a
+                              href={currentResultUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full bg-emerald-300 px-4 py-2 text-sm font-medium text-stone-950"
+                            >
+                              播放成片
+                            </a>
+                            <a
+                              href={currentResultUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full border border-white/15 px-4 py-2 text-sm text-stone-100"
+                            >
+                              新窗口打开
+                            </a>
+                            <a
+                              href={currentResultUrl}
+                              download
+                              className="rounded-full border border-emerald-200/40 px-4 py-2 text-sm text-emerald-100"
+                            >
+                              下载视频
+                            </a>
+                            <button
+                              type="button"
+                              onClick={handleSubmit}
+                              disabled={!canSubmit}
+                              className="rounded-full border border-amber-300/40 bg-amber-300/10 px-4 py-2 text-sm text-amber-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-stone-500"
+                            >
+                              重新生成
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : job?.status === "running" || job?.status === "queued" ? (
+                    <div className="flex min-h-[620px] flex-col justify-between rounded-[1.25rem] border border-white/10 bg-black/20 p-5">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
+                          {job.status === "running" ? "模型正在生成" : "任务正在排队"}
+                        </span>
+                        <span className="text-xs text-stone-500">
+                          {selectedTemplateDisplay?.name ?? "当前模板"}
+                        </span>
+                      </div>
+                      <div className="space-y-4 text-center">
+                        <div className="mx-auto h-24 w-24 rounded-full border border-amber-300/20 bg-[radial-gradient(circle,_rgba(251,191,36,0.25),_transparent_65%)]" />
+                        <div className="space-y-3">
+                          <p className="text-3xl font-medium text-stone-50">
+                            {job.status === "running" ? "正在把创意变成视频" : "你的任务已进入队列"}
+                          </p>
+                          <p className="mx-auto max-w-md text-sm leading-7 text-stone-400">
+                            {job.status === "running"
+                              ? "系统已经把模板、参考图和创意描述发给模型，这里会自动刷新，成片完成后会直接替换成播放器。"
+                              : "平台已经接受任务，等排到执行后会自动进入生成状态。"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 text-sm text-stone-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-stone-500">当前主体</span>
+                          <span className="max-w-[60%] text-right">{subject || "未填写"}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-stone-500">平台任务号</span>
+                          <span className="max-w-[60%] break-all text-right">
+                            {job.providerTaskId ?? "等待分配中"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : job?.status === "failed" ? (
+                    <div className="flex min-h-[620px] flex-col justify-between rounded-[1.25rem] border border-rose-300/20 bg-rose-300/8 p-5">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-full border border-rose-300/20 bg-rose-300/10 px-3 py-1 text-xs text-rose-100">
+                          生成未完成
+                        </span>
+                        <span className="text-xs text-rose-100/70">可以继续调整再试</span>
+                      </div>
+                      <div className="space-y-4 text-center">
+                        <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-rose-300/20 bg-rose-300/10 text-3xl text-rose-200">
+                          !
+                        </div>
+                        <div className="space-y-3">
+                          <p className="text-3xl font-medium text-stone-50">这次没有顺利出片</p>
+                          <p className="mx-auto max-w-md text-sm leading-7 text-stone-300">
+                            你可以先精简核心画面顺序，或者换一组更统一的参考图，再重新生成一次。
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {job.primaryScene?.providerError ? (
+                          <div className="rounded-[1.25rem] border border-rose-300/20 bg-black/20 p-4 text-sm leading-7 text-rose-100">
+                            {job.primaryScene.providerError}
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            onClick={handleSubmit}
+                            disabled={!canSubmit}
+                            className="rounded-full bg-amber-300 px-4 py-2 text-sm font-medium text-stone-950 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300"
+                          >
+                            调整后重新生成
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   ) : (
-                    <div className="flex h-full flex-col justify-between rounded-[1.25rem] border border-white/10 bg-black/20 p-5">
+                    <div className="flex min-h-[620px] flex-col justify-between rounded-[1.25rem] border border-white/10 bg-black/20 p-5">
                       <div className="flex items-center justify-between">
                         <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
                           {selectedTemplateDisplay?.name ?? "创作预览"}
@@ -959,46 +1157,122 @@ export function App() {
               <div className="flex items-end justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.28em] text-stone-500">最近任务</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">继续上次创作</h2>
+                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">作品列表</h2>
                 </div>
               </div>
 
-              <div className="mt-5 space-y-3">
-                {recentJobs.length ? (
-                  recentJobs.map((recentJob) => (
-                    <button
+              <div className="mt-5 flex flex-wrap gap-2">
+                {[
+                  { key: "all", label: "全部" },
+                  { key: "succeeded", label: "已完成" },
+                  { key: "running", label: "生成中" },
+                  { key: "failed", label: "失败" }
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() =>
+                      setRecentJobFilter(item.key as "all" | "succeeded" | "running" | "failed")
+                    }
+                    className={`rounded-full border px-4 py-2 text-sm transition ${
+                      recentJobFilter === item.key
+                        ? "border-amber-300/40 bg-amber-300/10 text-amber-100"
+                        : "border-white/10 bg-black/20 text-stone-400 hover:border-white/20 hover:text-stone-200"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-5 space-y-4">
+                {filteredRecentJobs.length ? (
+                  filteredRecentJobs.map((recentJob) => (
+                    <article
                       key={recentJob.id}
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          setError("");
-                          const nextJob = await fetchGenerationJob(recentJob.id);
-                          setJob(nextJob);
-                        } catch (jobError) {
-                          const message =
-                            jobError instanceof Error ? jobError.message : "加载所选任务失败。";
-                          setError(message);
-                        }
-                      }}
-                      className="flex w-full flex-col gap-3 rounded-[1.5rem] border border-white/10 bg-black/20 p-4 text-left transition hover:border-white/20 hover:bg-white/[0.04]"
+                      className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/20"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-stone-100">{recentJob.templateName}</p>
-                          <p className="mt-1 text-xs text-stone-500">{formatTimeLabel(recentJob.updatedAt)}</p>
+                      <div className="grid gap-0 md:grid-cols-[140px_1fr]">
+                        <div className="relative min-h-[140px] overflow-hidden border-b border-white/10 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.2),_transparent_35%),linear-gradient(180deg,_rgba(24,24,27,0.95),_rgba(9,9,11,1))] md:border-b-0 md:border-r">
+                          {recentJob.resultUrl ? (
+                            <video
+                              src={recentJob.resultUrl}
+                              muted
+                              loop
+                              playsInline
+                              autoPlay
+                              className="h-full w-full object-cover opacity-85"
+                            />
+                          ) : (
+                            <div className="flex h-full flex-col justify-between p-4">
+                              <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-stone-400">
+                                {getStrategyLabel(recentJob.strategy)}
+                              </span>
+                              <p className="text-sm leading-6 text-stone-300">
+                                {recentJob.subject || "等待作品封面"}
+                              </p>
+                            </div>
+                          )}
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                            <span className={`rounded-full border px-2.5 py-1 text-[11px] ${getStatusBadge(recentJob.status)}`}>
+                              {getStatusLabel(recentJob.status)}
+                            </span>
+                          </div>
                         </div>
-                        <span className={`text-xs ${getStatusTone(recentJob.status)}`}>
-                          {getStatusLabel(recentJob.status)}
-                        </span>
+
+                        <div className="flex flex-col gap-4 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-stone-100">{recentJob.templateName}</p>
+                              <p className="mt-1 text-xs text-stone-500">
+                                {formatTimeLabel(recentJob.updatedAt)}
+                              </p>
+                            </div>
+                            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
+                              {getStrategyLabel(recentJob.strategy)}
+                            </span>
+                          </div>
+
+                          <p className="line-clamp-3 text-sm leading-6 text-stone-400">
+                            {recentJob.scriptPreview}
+                          </p>
+
+                          <div className="flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  setError("");
+                                  const nextJob = await fetchGenerationJob(recentJob.id);
+                                  setJob(nextJob);
+                                } catch (jobError) {
+                                  const message =
+                                    jobError instanceof Error ? jobError.message : "加载所选任务失败。";
+                                  setError(message);
+                                }
+                              }}
+                              className="rounded-full bg-white/8 px-4 py-2 text-sm text-stone-100 transition hover:bg-white/12"
+                            >
+                              打开任务
+                            </button>
+                            {recentJob.resultUrl ? (
+                              <a
+                                href={recentJob.resultUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full border border-emerald-200/40 px-4 py-2 text-sm text-emerald-100"
+                              >
+                                查看成片
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
                       </div>
-                      <p className="line-clamp-3 text-sm leading-6 text-stone-400">
-                        {recentJob.scriptPreview}
-                      </p>
-                    </button>
+                    </article>
                   ))
                 ) : (
                   <p className="text-sm leading-7 text-stone-500">
-                    在 MVP 阶段，即使没有账号系统，最近任务也会保存在当前设备里，方便你继续查看。
+                    当前筛选条件下还没有作品。在 MVP 阶段，即使没有账号系统，最近任务也会保存在当前设备里，方便你继续查看。
                   </p>
                 )}
               </div>

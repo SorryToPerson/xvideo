@@ -16,4 +16,28 @@ export class TemplatesService {
       orderBy: { createdAt: "asc" }
     });
   }
+
+  updateTemplate(
+    id: string,
+    input: {
+      name: string;
+      description: string;
+      defaultStrategy: "single" | "extend" | "storyboard";
+    }
+  ) {
+    return this.prisma.template.update({
+      where: { id },
+      data: {
+        name: input.name,
+        description: input.description,
+        defaultStrategy: input.defaultStrategy
+      },
+      include: {
+        versions: {
+          orderBy: { versionNumber: "desc" },
+          take: 1
+        }
+      }
+    });
+  }
 }

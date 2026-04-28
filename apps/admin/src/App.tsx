@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchTemplates } from "./lib/api";
+import { fetchTemplates, updateTemplate } from "./lib/api";
 
 type Template = {
   id: string;
@@ -74,6 +74,10 @@ function getStrategyMeta(strategy: string) {
 }
 
 function getTemplateDisplay(template: Template) {
+  if (/[\u4e00-\u9fff]/.test(template.name) || /[\u4e00-\u9fff]/.test(template.description)) {
+    return { name: template.name, description: template.description };
+  }
+
   const mapped =
     templateTextMap[template.slug ?? ""] ??
     templateTextMap[template.id] ??
@@ -86,6 +90,11 @@ export function App() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [error, setError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [draftDescription, setDraftDescription] = useState("");
+  const [draftStrategy, setDraftStrategy] = useState<"single" | "extend" | "storyboard">("single");
 
   useEffect(() => {
     fetchTemplates()
@@ -111,6 +120,44 @@ export function App() {
   const templateCount = templates.length;
   const extendReadyCount = templates.filter((template) => template.defaultStrategy === "extend").length;
   const storyboardReadyCount = templates.filter((template) => template.defaultStrategy === "storyboard").length;
+
+  useEffect(() => {
+    if (!selectedTemplate) {
+      return;
+    }
+
+    setDraftName(selectedTemplate.name);
+    setDraftDescription(selectedTemplate.description);
+    setDraftStrategy(selectedTemplate.defaultStrategy as "single" | "extend" | "storyboard");
+    setSaveMessage("");
+  }, [selectedTemplate?.id]);
+
+  async function handleSaveTemplate() {
+    if (!selectedTemplate) {
+      return;
+    }
+
+    try {
+      setError("");
+      setSaveMessage("");
+      setIsSaving(true);
+
+      const updated = (await updateTemplate(selectedTemplate.id, {
+        name: draftName,
+        description: draftDescription,
+        defaultStrategy: draftStrategy
+      })) as Template;
+
+      setTemplates((current) =>
+        current.map((template) => (template.id === updated.id ? updated : template))
+      );
+      setSaveMessage("模板已保存");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "更新模板失败");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.12),_transparent_20%),radial-gradient(circle_at_88%_12%,_rgba(251,191,36,0.07),_transparent_14%),linear-gradient(180deg,_#18120d_0%,_#0c0b0a_48%,_#050505_100%)] text-stone-100">
@@ -269,7 +316,7 @@ export function App() {
             <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur md:p-7">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-stone-500">模板详情</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-stone-500">模板编辑</p>
                   <h2 className="mt-2 text-2xl font-semibold text-stone-50">围绕当前模板的运营视图</h2>
                 </div>
               </div>
@@ -290,18 +337,60 @@ export function App() {
                     <p className="mt-5 text-sm leading-7 text-stone-300">{selectedDisplay.description}</p>
 
                     <div className="mt-6 grid gap-3 md:grid-cols-2">
+                      <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 md:col-span-2">
+                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板名称</p>
+                        <input
+                          value={draftName}
+                          onChange={(event) => setDraftName(event.target.value)}
+                          className="mt-3 w-full border-none bg-transparent p-0 text-lg text-stone-100 outline-none"
+                        />
+                      </label>
+
+                      <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 md:col-span-2">
+                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板描述</p>
+                        <textarea
+                          value={draftDescription}
+                          onChange={(event) => setDraftDescription(event.target.value)}
+                          className="mt-3 min-h-28 w-full resize-none border-none bg-transparent p-0 text-sm leading-7 text-stone-300 outline-none"
+                        />
+                      </label>
+
+                      <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">默认策略</p>
+                        <select
+                          value={draftStrategy}
+                          onChange={(event) =>
+                            setDraftStrategy(event.target.value as "single" | "extend" | "storyboard")
+                          }
+                          className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-stone-100 outline-none"
+                        >
+                          <option value="single">快速短片</option>
+                          <option value="extend">连续续写</option>
+                          <option value="storyboard">分镜生成</option>
+                        </select>
+                      </label>
+
                       <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">面向用户</p>
-                        <p className="mt-3 text-sm leading-7 text-stone-300">
-                          普通用户只需要填写主题、场景、情绪和参考图，不直接接触专业 prompt。
+                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板版本</p>
+                        <p className="mt-3 text-2xl font-medium text-stone-100">
+                          {selectedTemplate.versions?.length ?? 0}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-stone-400">
+                          第一版先支持模板基础信息维护，后续再补版本编辑。
                         </p>
                       </div>
-                      <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">后台责任</p>
-                        <p className="mt-3 text-sm leading-7 text-stone-300">
-                          通过模板版本、默认策略和运营规则，稳定输出一条更容易可用的视频。
-                        </p>
-                      </div>
+                    </div>
+
+                    <div className="mt-6 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleSaveTemplate}
+                        disabled={isSaving}
+                        className="rounded-full bg-amber-300 px-5 py-3 text-sm font-medium text-stone-950 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300"
+                      >
+                        {isSaving ? "保存中..." : "保存模板"}
+                      </button>
+                      {saveMessage ? <p className="text-sm text-emerald-300">{saveMessage}</p> : null}
                     </div>
                   </div>
 
