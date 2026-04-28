@@ -17,6 +17,21 @@ type Template = {
 type Job = {
   id: string;
   status: string;
+  providerTaskId?: string | null;
+  resultUrl?: string | null;
+  finalVideo?: {
+    id: string;
+    storagePath: string;
+    sourceUrl?: string | null;
+    url: string;
+  } | null;
+  primaryScene?: {
+    id: string;
+    status: string;
+    providerTaskId?: string | null;
+    resultUrl?: string | null;
+    providerError?: string | null;
+  } | null;
   scenes?: Array<{
     id: string;
     status: string;
@@ -249,23 +264,28 @@ export function App() {
             <h3 className="text-lg font-medium">Latest Job</h3>
             <p className="mt-3 text-stone-300">Status: {job.status}</p>
             <p className="text-sm text-stone-500">Job ID: {job.id}</p>
-            {job.scenes?.[0]?.providerTaskId ? (
+            {job.providerTaskId ? (
               <p className="mt-2 text-sm text-stone-500">
-                Provider task: {job.scenes[0].providerTaskId}
+                Provider task: {job.providerTaskId}
               </p>
             ) : null}
-            {job.scenes?.[0]?.resultUrl ? (
+            {job.resultUrl ? (
               <a
-                href={job.scenes[0].resultUrl}
+                href={job.resultUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-3 inline-block text-sm text-amber-300"
               >
-                Open Generated Video
+                {job.finalVideo ? "Open COS Video" : "Open Generated Video"}
               </a>
             ) : null}
-            {job.scenes?.[0]?.providerError ? (
-              <p className="mt-3 text-sm text-rose-300">{job.scenes[0].providerError}</p>
+            {job.finalVideo?.storagePath ? (
+              <p className="mt-3 text-sm text-stone-500">
+                Stored in COS: {job.finalVideo.storagePath}
+              </p>
+            ) : null}
+            {job.primaryScene?.providerError ? (
+              <p className="mt-3 text-sm text-rose-300">{job.primaryScene.providerError}</p>
             ) : null}
             {["queued", "running"].includes(job.status) ? (
               <p className="mt-3 text-sm text-stone-500">

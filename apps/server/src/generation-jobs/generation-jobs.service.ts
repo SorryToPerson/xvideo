@@ -173,8 +173,43 @@ export class GenerationJobsService {
     });
   }
 
+  private async formatJobResponse(id: string) {
+    const job = await this.prisma.generationJob.findUnique({
+      where: { id },
+      include: {
+        scenes: {
+          orderBy: { sequenceIndex: "asc" }
+        },
+        attempts: true,
+        finalVideo: true
+      }
+    });
+
+    if (!job) {
+      return null;
+    }
+
+    const primaryScene = job.scenes[0] ?? null;
+    const finalVideo = job.finalVideo
+      ? {
+          id: job.finalVideo.id,
+          storagePath: job.finalVideo.storagePath,
+          sourceUrl: job.finalVideo.sourceUrl,
+          url: this.mediaAssetsService.getSignedAssetUrl(job.finalVideo.storagePath)
+        }
+      : null;
+
+    return {
+      ...job,
+      primaryScene,
+      providerTaskId: primaryScene?.providerTaskId ?? null,
+      resultUrl: finalVideo?.url ?? primaryScene?.resultUrl ?? null,
+      finalVideo
+    };
+  }
+
   async getJob(id: string) {
-    let job = await this.prisma.generationJob.findUnique({
+    const job = await this.prisma.generationJob.findUnique({
       where: { id },
       include: {
         scenes: true,
@@ -206,14 +241,6 @@ export class GenerationJobsService {
 
     await this.syncJobStatus(id);
 
-    job = await this.prisma.generationJob.findUnique({
-      where: { id },
-      include: {
-        scenes: true,
-        attempts: true
-      }
-    });
-
-    return job;
+    return this.formatJobResponse(id);
   }
 }
