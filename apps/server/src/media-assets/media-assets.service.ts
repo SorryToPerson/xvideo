@@ -11,6 +11,8 @@ export class MediaAssetsService {
   private readonly region = process.env.COS_REGION ?? "";
   private readonly referencePrefix =
     process.env.COS_PATH_PREFIX_REFERENCE ?? "reference-images";
+  private readonly videoPrefix =
+    process.env.COS_PATH_PREFIX_VIDEO ?? "generated-videos";
 
   private readonly cos =
     process.env.COS_SECRET_ID && process.env.COS_SECRET_KEY
@@ -39,6 +41,11 @@ export class MediaAssetsService {
   private buildReferenceKey(filename: string) {
     const extension = extname(filename) || "";
     return `${this.referencePrefix}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}${extension}`;
+  }
+
+  private buildVideoKey(filename: string) {
+    const extension = extname(filename) || ".mp4";
+    return `${this.videoPrefix}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}${extension}`;
   }
 
   private async putObject(key: string, file: Express.Multer.File) {
@@ -79,6 +86,62 @@ export class MediaAssetsService {
 
   getSignedAssetUrl(storagePath: string) {
     return this.createAccessibleUrl(storagePath);
+  }
+
+  async uploadRemoteVideo(sourceUrl: string) {
+    const response = await fetch(sourceUrl);
+
+    if (!response.ok) {
+      throw new InternalServerErrorException({
+        message: "Failed to download generated video from provider",
+        status: response.status
+      });
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get("content-type") ?? "video/mp4";
+    const urlPathname = new URL(sourceUrl).pathname;
+    const originalFilename = urlPathname.split("/").pop() || "generated-video.mp4";
+    const storagePath = this.buildVideoKey(originalFilename);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.cos!.putObject(
+          {
+            Bucket: this.bucket,
+            Region: this.region,
+            Key: storagePath,
+            Body: Buffer.from(arrayBuffer),
+            ContentType: contentType
+          },
+          (error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            resolve();
+          }
+        );
+      });
+    } catch (error) {
+      throw new InternalServerErrorException({
+        message: "Failed to upload generated video to COS",
+        error
+      });
+    }
+
+    const generatedVideo = await this.prisma.generatedVideo.create({
+      data: {
+        storagePath,
+        sourceUrl
+      }
+    });
+
+    return {
+      generatedVideo,
+      url: this.createAccessibleUrl(storagePath)
+    };
   }
 
   async createUploadedAsset(

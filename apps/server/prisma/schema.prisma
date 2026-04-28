@@ -51,6 +51,7 @@ model GenerationJob {
   finalVideoId      String?
   failureSummary    String?
   templateVersion   TemplateVersion     @relation(fields: [templateVersionId], references: [id])
+  finalVideo        GeneratedVideo?     @relation(fields: [finalVideoId], references: [id])
   scenes            GenerationScene[]
   attempts          GenerationAttempt[]
   createdAt         DateTime            @default(now())
@@ -89,9 +90,11 @@ model GenerationAttempt {
 model GeneratedVideo {
   id          String   @id @default(cuid())
   storagePath String
+  sourceUrl   String?
   durationMs  Int?
   width       Int?
   height      Int?
   posterPath  String?
   createdAt   DateTime @default(now())
+  jobs        GenerationJob[]
 }

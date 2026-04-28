@@ -1,9 +1,26 @@
 import type { GenerationStrategy } from "@xvideo/shared";
 
+async function parseErrorMessage(response: Response, fallbackMessage: string) {
+  try {
+    const payload = await response.json();
+
+    const modelMessage =
+      payload?.response?.error?.message ??
+      payload?.error?.message ??
+      payload?.message;
+
+    return typeof modelMessage === "string" && modelMessage.length
+      ? modelMessage
+      : fallbackMessage;
+  } catch {
+    return fallbackMessage;
+  }
+}
+
 export async function fetchTemplates() {
   const response = await fetch("http://localhost:3001/api/templates");
   if (!response.ok) {
-    throw new Error("Failed to load templates");
+    throw new Error(await parseErrorMessage(response, "Failed to load templates"));
   }
 
   return response.json();
@@ -23,7 +40,7 @@ export async function createGenerationJob(payload: {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to create generation job");
+    throw new Error(await parseErrorMessage(response, "Failed to create generation job"));
   }
 
   return response.json();
@@ -39,7 +56,7 @@ export async function uploadReferenceImage(file: File) {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to upload reference image");
+    throw new Error(await parseErrorMessage(response, "Failed to upload reference image"));
   }
 
   return response.json() as Promise<{
@@ -53,7 +70,7 @@ export async function uploadReferenceImage(file: File) {
 export async function fetchGenerationJob(id: string) {
   const response = await fetch(`http://localhost:3001/api/generation-jobs/${id}`);
   if (!response.ok) {
-    throw new Error("Failed to fetch generation job");
+    throw new Error(await parseErrorMessage(response, "Failed to fetch generation job"));
   }
 
   return response.json();

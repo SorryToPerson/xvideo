@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { createGenerationJob, fetchTemplates, uploadReferenceImage } from "./lib/api";
+import {
+  createGenerationJob,
+  fetchGenerationJob,
+  fetchTemplates,
+  uploadReferenceImage
+} from "./lib/api";
 
 type Template = {
   id: string;
@@ -12,7 +17,13 @@ type Template = {
 type Job = {
   id: string;
   status: string;
-  scenes?: Array<{ id: string; status: string; providerTaskId?: string | null }>;
+  scenes?: Array<{
+    id: string;
+    status: string;
+    providerTaskId?: string | null;
+    resultUrl?: string | null;
+    providerError?: string | null;
+  }>;
 };
 
 type UploadedReferenceImage = {
@@ -45,6 +56,25 @@ export function App() {
       .catch(() => setTemplates([]));
   }, []);
 
+  useEffect(() => {
+    if (!job?.id || !["queued", "running"].includes(job.status)) {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      try {
+        const nextJob = await fetchGenerationJob(job.id);
+        setJob(nextJob);
+      } catch (pollError) {
+        const message =
+          pollError instanceof Error ? pollError.message : "Failed to refresh job status.";
+        setError(message);
+      }
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [job?.id, job?.status]);
+
   async function handleReferenceImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const fileList = event.target.files;
 
@@ -65,8 +95,12 @@ export function App() {
 
       const results = await Promise.all(selectedFiles.map((file) => uploadReferenceImage(file)));
       setUploadedImages((current) => [...current, ...results].slice(0, 3));
-    } catch {
-      setError("Failed to upload one or more reference images.");
+    } catch (uploadError) {
+      const message =
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Failed to upload one or more reference images.";
+      setError(message);
     } finally {
       setIsUploading(false);
       event.target.value = "";
@@ -97,8 +131,10 @@ export function App() {
         referenceImageIds: uploadedImages.map((image) => image.id)
       });
       setJob(result);
-    } catch {
-      setError("Failed to create generation job.");
+    } catch (createError) {
+      const message =
+        createError instanceof Error ? createError.message : "Failed to create generation job.";
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -216,6 +252,24 @@ export function App() {
             {job.scenes?.[0]?.providerTaskId ? (
               <p className="mt-2 text-sm text-stone-500">
                 Provider task: {job.scenes[0].providerTaskId}
+              </p>
+            ) : null}
+            {job.scenes?.[0]?.resultUrl ? (
+              <a
+                href={job.scenes[0].resultUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-block text-sm text-amber-300"
+              >
+                Open Generated Video
+              </a>
+            ) : null}
+            {job.scenes?.[0]?.providerError ? (
+              <p className="mt-3 text-sm text-rose-300">{job.scenes[0].providerError}</p>
+            ) : null}
+            {["queued", "running"].includes(job.status) ? (
+              <p className="mt-3 text-sm text-stone-500">
+                We are checking task status automatically every 5 seconds.
               </p>
             ) : null}
           </section>

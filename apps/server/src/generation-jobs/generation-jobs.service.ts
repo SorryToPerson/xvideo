@@ -114,6 +114,43 @@ export class GenerationJobsService {
     });
   }
 
+  private async persistFinalSceneVideo(jobId: string, sceneId: string, providerVideoUrl: string) {
+    const job = await this.prisma.generationJob.findUnique({
+      where: { id: jobId }
+    });
+
+    if (job?.finalVideoId) {
+      const finalVideo = await this.prisma.generatedVideo.findUnique({
+        where: { id: job.finalVideoId }
+      });
+
+      if (finalVideo) {
+        return this.prisma.generationScene.update({
+          where: { id: sceneId },
+          data: {
+            resultUrl: this.mediaAssetsService.getSignedAssetUrl(finalVideo.storagePath)
+          }
+        });
+      }
+    }
+
+    const uploadedVideo = await this.mediaAssetsService.uploadRemoteVideo(providerVideoUrl);
+
+    await this.prisma.generationJob.update({
+      where: { id: jobId },
+      data: {
+        finalVideoId: uploadedVideo.generatedVideo.id
+      }
+    });
+
+    return this.prisma.generationScene.update({
+      where: { id: sceneId },
+      data: {
+        resultUrl: uploadedVideo.url
+      }
+    });
+  }
+
   private async syncJobStatus(jobId: string) {
     const scenes = await this.prisma.generationScene.findMany({
       where: { jobId },
@@ -155,6 +192,14 @@ export class GenerationJobsService {
           await this.syncSceneStatus(scene.id, scene.providerTaskId);
         } catch {
           // Keep the job readable even if provider sync temporarily fails.
+        }
+      }
+
+      if (scene.status === "succeeded" && scene.resultUrl?.startsWith("http")) {
+        try {
+          await this.persistFinalSceneVideo(job.id, scene.id, scene.resultUrl);
+        } catch {
+          // Keep the job readable even if COS persistence temporarily fails.
         }
       }
     }
