@@ -35,3 +35,13 @@ Template-driven Seedance 2.0 video generation MVP.
 - Official Ark auth docs use `ARK_API_KEY` and base URL `https://ark.cn-beijing.volces.com/api/v3`
 - This project calls the Seedance task API through `POST/GET /contents/generations/tasks`
 - `SEEDANCE_MODEL` should point to the video model or endpoint you have enabled in Ark
+
+## COS Storage Notes
+
+- Reference image uploads use server-side COS upload mode
+- Private buckets are supported; upload responses include an object key and a short-lived signed access URL
+- Required COS env vars:
+  - `COS_SECRET_ID`
+  - `COS_SECRET_KEY`
+  - `COS_BUCKET`
+  - `COS_REGION`

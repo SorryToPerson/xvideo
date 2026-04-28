@@ -9,7 +9,16 @@ export const envSchema = z.object({
   ARK_BASE_URL: z.string().optional(),
   SEEDANCE_BASE_URL: z.string().optional(),
   SEEDANCE_MODEL: z.string().optional(),
-  SEEDANCE_TASK_PATH: z.string().optional()
+  SEEDANCE_TASK_PATH: z.string().optional(),
+  COS_SECRET_ID: z.string().optional(),
+  COS_SECRET_KEY: z.string().optional(),
+  COS_BUCKET: z.string().optional(),
+  COS_REGION: z.string().optional(),
+  COS_PUBLIC_BASE_URL: z.string().optional(),
+  COS_UPLOAD_MODE: z.string().optional(),
+  COS_PATH_PREFIX_REFERENCE: z.string().optional(),
+  COS_PATH_PREFIX_VIDEO: z.string().optional(),
+  COS_PATH_PREFIX_POSTER: z.string().optional()
 });
 
 function parseEnvFile(filePath: string) {
