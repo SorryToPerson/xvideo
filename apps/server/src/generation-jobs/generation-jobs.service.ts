@@ -16,8 +16,10 @@ export class GenerationJobsService {
     templateVersionId: string;
     strategy: GenerationStrategy;
     script: string;
+    referenceImageIds?: string[];
   }) {
     const prompt = `Create a video for: ${input.script}`;
+    const referenceImageIds = input.referenceImageIds ?? [];
 
     const providerResult = await this.seedanceService.createVideoTask({
       prompt,
@@ -35,7 +37,10 @@ export class GenerationJobsService {
           create: {
             attemptNumber: 1,
             providerName: "seedance",
-            requestPayload: JSON.stringify(providerResult.rawRequest),
+            requestPayload: JSON.stringify({
+              ...providerResult.rawRequest,
+              referenceImageIds
+            }),
             responsePayload: JSON.stringify(providerResult.rawResponse),
             resultStatus: "accepted"
           }

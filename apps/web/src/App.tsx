@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createGenerationJob, fetchTemplates } from "./lib/api";
+import { createGenerationJob, fetchTemplates, uploadReferenceImage } from "./lib/api";
 
 type Template = {
   id: string;
@@ -15,6 +15,13 @@ type Job = {
   scenes?: Array<{ id: string; status: string; providerTaskId?: string | null }>;
 };
 
+type UploadedReferenceImage = {
+  id: string;
+  filename: string;
+  objectKey: string;
+  url: string;
+};
+
 export function App() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [script, setScript] = useState(
@@ -23,6 +30,9 @@ export function App() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<UploadedReferenceImage[]>([]);
 
   useEffect(() => {
     fetchTemplates()
@@ -35,6 +45,38 @@ export function App() {
       .catch(() => setTemplates([]));
   }, []);
 
+  async function handleReferenceImageChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const fileList = event.target.files;
+
+    if (!fileList?.length) {
+      return;
+    }
+
+    const selectedFiles = Array.from(fileList).slice(0, 3 - uploadedImages.length);
+
+    if (!selectedFiles.length) {
+      setError("You can upload up to 3 reference images.");
+      return;
+    }
+
+    try {
+      setError("");
+      setIsUploading(true);
+
+      const results = await Promise.all(selectedFiles.map((file) => uploadReferenceImage(file)));
+      setUploadedImages((current) => [...current, ...results].slice(0, 3));
+    } catch {
+      setError("Failed to upload one or more reference images.");
+    } finally {
+      setIsUploading(false);
+      event.target.value = "";
+    }
+  }
+
+  function removeUploadedImage(id: string) {
+    setUploadedImages((current) => current.filter((image) => image.id !== id));
+  }
+
   async function handleSubmit() {
     const selectedTemplate = templates.find((template) => template.id === selectedTemplateId);
     const templateVersionId = selectedTemplate?.versions?.[0]?.id;
@@ -46,15 +88,19 @@ export function App() {
 
     try {
       setError("");
+      setIsSubmitting(true);
       const result = await createGenerationJob({
         clientId: "browser-mvp-client",
         templateVersionId,
         strategy: selectedTemplate.defaultStrategy,
-        script
+        script,
+        referenceImageIds: uploadedImages.map((image) => image.id)
       });
       setJob(result);
     } catch {
       setError("Failed to create generation job.");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -67,7 +113,7 @@ export function App() {
             Tell us the story. We turn it into an AI video.
           </h1>
           <p className="max-w-2xl text-stone-300">
-            Pick a template, add a rough script, upload reference images later, and generate a usable video without prompt engineering.
+            Pick a template, add a rough script, upload up to three reference images, and generate a usable video without prompt engineering.
           </p>
         </div>
 
@@ -90,6 +136,57 @@ export function App() {
         </div>
 
         <div className="rounded-[2rem] border border-stone-800 bg-stone-900/70 p-6">
+          <div>
+            <label className="block text-sm uppercase tracking-[0.2em] text-stone-400">
+              Reference Images
+            </label>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label className="cursor-pointer rounded-full border border-stone-700 px-4 py-2 text-sm text-stone-200 transition hover:border-amber-300 hover:text-amber-200">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleReferenceImageChange}
+                  className="hidden"
+                  disabled={isUploading || uploadedImages.length >= 3}
+                />
+                {isUploading ? "Uploading..." : "Upload Images"}
+              </label>
+              <p className="text-sm text-stone-500">
+                {uploadedImages.length}/3 uploaded
+              </p>
+            </div>
+
+            {uploadedImages.length ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {uploadedImages.map((image) => (
+                  <article
+                    key={image.id}
+                    className="rounded-2xl border border-stone-800 bg-stone-950/70 p-3"
+                  >
+                    <img
+                      src={image.url}
+                      alt={image.filename}
+                      className="h-28 w-full rounded-xl object-cover"
+                    />
+                    <p className="mt-3 truncate text-sm text-stone-300">{image.filename}</p>
+                    <button
+                      type="button"
+                      onClick={() => removeUploadedImage(image.id)}
+                      className="mt-2 text-xs text-rose-300"
+                    >
+                      Remove
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-stone-500">
+                Upload product photos, character references, or style images to guide generation.
+              </p>
+            )}
+          </div>
+
           <label className="block text-sm uppercase tracking-[0.2em] text-stone-400">
             Rough Script
           </label>
@@ -102,9 +199,10 @@ export function App() {
             <button
               type="button"
               onClick={handleSubmit}
+              disabled={isSubmitting || isUploading}
               className="rounded-full bg-amber-300 px-5 py-3 font-medium text-stone-950"
             >
-              Generate Video
+              {isSubmitting ? "Generating..." : "Generate Video"}
             </button>
             {error ? <p className="text-sm text-rose-300">{error}</p> : null}
           </div>

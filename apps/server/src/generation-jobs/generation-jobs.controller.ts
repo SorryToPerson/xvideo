@@ -15,6 +15,7 @@ export class GenerationJobsController {
       templateVersionId: string;
       strategy: GenerationStrategy;
       script: string;
+      referenceImageIds?: string[];
     }
   ) {
     return this.generationJobsService.createJob(body);
