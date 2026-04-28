@@ -74,7 +74,11 @@ const recentJobsStorageKey = "xvideo-recent-jobs";
 const templateTextMap: Record<string, { name: string; description: string }> = {
   "product-seeding": {
     name: "产品种草短片",
-    description: "适合普通用户快速制作产品展示和种草类短视频。"
+    description: "适合普通用户快速制作产品展示、种草推荐和轻叙事类短视频。"
+  },
+  "Product Seeding": {
+    name: "产品种草短片",
+    description: "适合普通用户快速制作产品展示、种草推荐和轻叙事类短视频。"
   }
 };
 
@@ -110,24 +114,17 @@ const briefPresets: BriefPreset[] = [
 
 const statusSteps = [
   { key: "draft", label: "填写创意描述" },
-  { key: "upload", label: "添加参考图" },
-  { key: "queued", label: "排队中" },
-  { key: "running", label: "生成中" },
-  { key: "succeeded", label: "已完成" }
+  { key: "upload", label: "补充参考图" },
+  { key: "queued", label: "任务排队" },
+  { key: "running", label: "模型生成" },
+  { key: "succeeded", label: "成片可用" }
 ] as const;
 
-function getStatusTone(status: string) {
-  switch (status) {
-    case "succeeded":
-      return "text-emerald-300";
-    case "failed":
-      return "text-rose-300";
-    case "running":
-      return "text-amber-200";
-    default:
-      return "text-stone-300";
-  }
-}
+const quickHints = [
+  "主体写具体，比如“玻璃瓶护肤精华”会比“化妆品”稳定得多。",
+  "场景和情绪尽量同时给出，比如“清晨阳光下的安静梳妆台”。",
+  "参考图宁少勿杂，三张风格统一的图片通常更容易出片。"
+];
 
 function getStatusLabel(status: string) {
   switch (status) {
@@ -141,6 +138,49 @@ function getStatusLabel(status: string) {
       return "失败";
     default:
       return "待开始";
+  }
+}
+
+function getStatusTone(status: string) {
+  switch (status) {
+    case "succeeded":
+      return "text-emerald-300";
+    case "failed":
+      return "text-rose-300";
+    case "running":
+      return "text-amber-200";
+    case "queued":
+      return "text-sky-200";
+    default:
+      return "text-stone-300";
+  }
+}
+
+function getStatusBadge(status: string) {
+  switch (status) {
+    case "succeeded":
+      return "border-emerald-300/30 bg-emerald-300/12 text-emerald-100";
+    case "failed":
+      return "border-rose-300/30 bg-rose-300/10 text-rose-100";
+    case "running":
+      return "border-amber-300/30 bg-amber-300/12 text-amber-100";
+    case "queued":
+      return "border-sky-300/30 bg-sky-300/10 text-sky-100";
+    default:
+      return "border-white/10 bg-white/5 text-stone-300";
+  }
+}
+
+function getStrategyLabel(strategy: GenerationStrategy) {
+  switch (strategy) {
+    case "single":
+      return "快速短片";
+    case "extend":
+      return "连续续写";
+    case "storyboard":
+      return "分镜生成";
+    default:
+      return strategy;
   }
 }
 
@@ -160,8 +200,8 @@ function buildScriptFromFields(input: {
     `核心画面顺序：${input.hook.trim()}`,
     `补充要求：${input.details.trim()}`
   ]
-    .filter((line) => !line.endsWith(":"))
-    .join(". ");
+    .filter((line) => !line.endsWith("："))
+    .join("。");
 }
 
 function loadRecentJobs() {
@@ -196,14 +236,17 @@ function getTemplateDisplay(template: Template) {
     templateTextMap[template.id] ??
     templateTextMap[template.name];
 
-  if (mapped) {
-    return mapped;
-  }
+  return mapped ?? { name: template.name, description: template.description };
+}
 
-  return {
-    name: template.name,
-    description: template.description
-  };
+function formatTimeLabel(isoString: string) {
+  const date = new Date(isoString);
+  return Number.isNaN(date.getTime())
+    ? "刚刚更新"
+    : `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${date
+        .getHours()
+        .toString()
+        .padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
 }
 
 export function App() {
@@ -228,6 +271,7 @@ export function App() {
     [selectedTemplateId, templates]
   );
 
+  const selectedTemplateDisplay = selectedTemplate ? getTemplateDisplay(selectedTemplate) : null;
   const effectiveStrategy = strategyOverride || selectedTemplate?.defaultStrategy || "single";
   const composedScript = useMemo(
     () =>
@@ -241,6 +285,26 @@ export function App() {
       }),
     [audience, details, hook, scene, subject, tone]
   );
+
+  const readyChecks = [
+    { label: "已选择模板", done: Boolean(selectedTemplate) },
+    { label: "已填写主体", done: Boolean(subject.trim()) },
+    { label: "已填写场景", done: Boolean(scene.trim()) },
+    { label: "已填写核心画面", done: Boolean(hook.trim()) },
+    { label: "已上传参考图", done: uploadedImages.length > 0 }
+  ];
+
+  const readyCount = readyChecks.filter((item) => item.done).length;
+  const canSubmit =
+    Boolean(selectedTemplate?.versions?.[0]?.id) &&
+    Boolean(subject.trim()) &&
+    Boolean(scene.trim()) &&
+    Boolean(hook.trim()) &&
+    !isSubmitting &&
+    !isUploading;
+
+  const statusStepIndex = statusSteps.findIndex((step) => step.key === job?.status);
+  const currentResultUrl = job?.finalVideo?.url ?? job?.resultUrl ?? null;
 
   useEffect(() => {
     setRecentJobs(loadRecentJobs());
@@ -293,7 +357,7 @@ export function App() {
 
     const nextRecentJob: RecentJob = {
       id: job.id,
-      templateName: selectedTemplate ? getTemplateDisplay(selectedTemplate).name : "视频模板",
+      templateName: selectedTemplateDisplay?.name ?? "视频模板",
       status: job.status,
       scriptPreview: composedScript,
       resultUrl: job.finalVideo?.url ?? job.resultUrl ?? null,
@@ -305,7 +369,7 @@ export function App() {
       persistRecentJobs(merged);
       return merged;
     });
-  }, [composedScript, job, selectedTemplate?.name]);
+  }, [composedScript, job, selectedTemplateDisplay?.name]);
 
   async function handleReferenceImageChange(event: React.ChangeEvent<HTMLInputElement>) {
     const fileList = event.target.files;
@@ -328,9 +392,7 @@ export function App() {
       setUploadedImages((current) => [...current, ...results].slice(0, 3));
     } catch (uploadError) {
       const message =
-        uploadError instanceof Error
-          ? uploadError.message
-          : "一张或多张参考图上传失败。";
+        uploadError instanceof Error ? uploadError.message : "一张或多张参考图上传失败。";
       setError(message);
     } finally {
       setIsUploading(false);
@@ -389,51 +451,121 @@ export function App() {
     }
   }
 
-  const statusStepIndex = statusSteps.findIndex((step) => step.key === job?.status);
-  const currentResultUrl = job?.finalVideo?.url ?? job?.resultUrl ?? null;
-
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.16),_transparent_26%),linear-gradient(180deg,_#17120f_0%,_#09090b_42%,_#050505_100%)] text-stone-100">
-      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-5 py-6 md:px-8 md:py-8">
-        <header className="flex flex-col gap-8 border-b border-white/10 pb-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl space-y-5">
-            <p className="text-xs uppercase tracking-[0.45em] text-amber-200/80">XVIDEO 视频工作台</p>
-            <div className="space-y-3">
-              <h1 className="max-w-4xl text-4xl font-semibold leading-tight text-stone-50 md:text-6xl">
-                给我们一个大概想法和几张参考图，我们帮你生成可用的 AI 视频。
-              </h1>
-              <p className="max-w-2xl text-base leading-7 text-stone-300 md:text-lg">
-                这个流程是为普通创作者设计的。你不需要懂提示词工程、镜头语言，也不需要自己调模型参数。
-              </p>
-            </div>
-          </div>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_22%),radial-gradient(circle_at_85%_15%,_rgba(251,191,36,0.08),_transparent_18%),linear-gradient(180deg,_#18120d_0%,_#0d0b0a_48%,_#050505_100%)] text-stone-100">
+      <section className="mx-auto flex max-w-[1500px] flex-col gap-8 px-4 py-5 md:px-8 md:py-7">
+        <header className="overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.28)] backdrop-blur md:p-8">
+          <div className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1 text-xs tracking-[0.28em] text-amber-100/85">
+                  XVIDEO 视频工作台
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-stone-400">
+                  单击生成 · 模板驱动 · Seedance 1.5 Pro
+                </span>
+              </div>
 
-          <div className="grid gap-3 self-start rounded-[2rem] border border-white/10 bg-white/5 p-4 backdrop-blur md:grid-cols-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.28em] text-stone-500">模板数量</p>
-              <p className="mt-2 text-2xl font-semibold text-stone-100">{templates.length || "-"}</p>
+              <div className="space-y-4">
+                <h1 className="max-w-4xl text-4xl font-semibold leading-tight text-stone-50 md:text-6xl">
+                  普通用户也能像搭创意板一样，快速生成一条可用的视频。
+                </h1>
+                <p className="max-w-2xl text-base leading-7 text-stone-300 md:text-lg">
+                  你只需要提供一个大概剧本和几张参考图，系统会根据模板自动补全提示词、组织生成流程，并持续返回任务状态。
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs uppercase tracking-[0.25em] text-stone-500">当前模板</p>
+                  <p className="mt-3 text-lg font-medium text-stone-100">
+                    {selectedTemplateDisplay?.name ?? "等待选择"}
+                  </p>
+                </div>
+                <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs uppercase tracking-[0.25em] text-stone-500">参考图片</p>
+                  <p className="mt-3 text-lg font-medium text-stone-100">{uploadedImages.length}/3</p>
+                </div>
+                <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs uppercase tracking-[0.25em] text-stone-500">准备度</p>
+                  <p className="mt-3 text-lg font-medium text-stone-100">
+                    {readyCount}/{readyChecks.length}
+                  </p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.28em] text-stone-500">参考图片</p>
-              <p className="mt-2 text-2xl font-semibold text-stone-100">{uploadedImages.length}/3</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.28em] text-stone-500">当前模型</p>
-              <p className="mt-2 text-sm font-medium text-stone-100">Seedance 1.5 Pro</p>
+
+            <div className="grid gap-4 md:grid-cols-[1fr_0.78fr]">
+              <div className="rounded-[1.75rem] border border-white/10 bg-black/25 p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-stone-500">生成预览</p>
+                <div className="mt-4 aspect-[4/5] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.18),_transparent_30%),linear-gradient(180deg,_rgba(28,25,23,0.95),_rgba(10,10,10,0.98))] p-5">
+                  {currentResultUrl ? (
+                    <video
+                      src={currentResultUrl}
+                      controls
+                      className="h-full w-full rounded-[1.25rem] object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full flex-col justify-between rounded-[1.25rem] border border-white/10 bg-black/20 p-5">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
+                          {selectedTemplateDisplay?.name ?? "创作预览"}
+                        </span>
+                        <span className="text-xs text-stone-500">{getStrategyLabel(effectiveStrategy)}</span>
+                      </div>
+                      <div className="space-y-3">
+                        <p className="text-2xl font-medium leading-snug text-stone-50">
+                          {subject || "从一个具体主体开始"}
+                        </p>
+                        <p className="text-sm leading-7 text-stone-400">
+                          {scene || "补充场景和氛围后，这里会更接近最终生成方向。"}
+                        </p>
+                      </div>
+                      <div className="grid gap-2 text-sm text-stone-500">
+                        <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                          <span>风格</span>
+                          <span className="max-w-[60%] text-right text-stone-300">{tone || "待填写"}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>受众</span>
+                          <span className="max-w-[60%] text-right text-stone-300">{audience || "待填写"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-[1.75rem] border border-white/10 bg-white/5 p-5">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-stone-500">出片提示</p>
+                  <h2 className="mt-3 text-2xl font-medium text-stone-50">让模型更稳一点</h2>
+                </div>
+                <div className="space-y-3">
+                  {quickHints.map((hint) => (
+                    <div
+                      key={hint}
+                      className="rounded-[1.25rem] border border-white/10 bg-black/20 p-4 text-sm leading-7 text-stone-300"
+                    >
+                      {hint}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </header>
 
-        <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_380px]">
           <div className="space-y-6">
             <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur md:p-7">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.32em] text-stone-500">步骤 1</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">选择视频模板</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-stone-500">步骤 1</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">选一个合适的模板</h2>
                 </div>
                 <p className="max-w-xl text-sm leading-6 text-stone-400">
-                  模板会帮你隐藏复杂的提示词和参数配置。选一个最接近目标成片用途的模板，剩下的交给系统处理。
+                  模板负责隐藏复杂参数和提示词逻辑。对普通用户来说，先选“用途最接近”的模板，比直接调参数更有效。
                 </p>
               </div>
 
@@ -447,22 +579,33 @@ export function App() {
                       key={template.id}
                       type="button"
                       onClick={() => setSelectedTemplateId(template.id)}
-                      className={`group flex h-full flex-col justify-between rounded-[1.75rem] border p-5 text-left transition ${
+                      className={`group relative overflow-hidden rounded-[1.75rem] border p-5 text-left transition ${
                         isSelected
-                          ? "border-amber-300/70 bg-amber-300/10 shadow-[0_0_0_1px_rgba(252,211,77,0.25)]"
-                          : "border-white/10 bg-black/20 hover:border-white/25 hover:bg-white/[0.06]"
+                          ? "border-amber-300/60 bg-[linear-gradient(180deg,rgba(251,191,36,0.14),rgba(251,191,36,0.04))]"
+                          : "border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/[0.06]"
                       }`}
                     >
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.25em] text-stone-500">
-                          {template.defaultStrategy}
+                      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+                      <div className="relative flex h-full flex-col justify-between gap-6">
+                        <div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
+                              {getStrategyLabel(template.defaultStrategy)}
+                            </span>
+                            {isSelected ? (
+                              <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-medium text-stone-950">
+                                当前使用
+                              </span>
+                            ) : null}
+                          </div>
+                          <h3 className="mt-4 text-xl font-medium text-stone-50">{display.name}</h3>
+                          <p className="mt-3 text-sm leading-7 text-stone-400">{display.description}</p>
+                        </div>
+
+                        <p className="text-sm text-stone-500">
+                          {isSelected ? "这个模板会用于当前任务" : "点击切换到这个模板"}
                         </p>
-                        <h3 className="mt-3 text-xl font-medium text-stone-50">{display.name}</h3>
-                        <p className="mt-3 text-sm leading-6 text-stone-400">{display.description}</p>
                       </div>
-                      <p className="mt-5 text-sm text-amber-100/80">
-                        {isSelected ? "当前已选中" : "使用这个模板"}
-                      </p>
                     </button>
                   );
                 })}
@@ -472,8 +615,8 @@ export function App() {
             <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur md:p-7">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.32em] text-stone-500">步骤 2</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">填写简单创意描述</h2>
+                  <p className="text-xs uppercase tracking-[0.3em] text-stone-500">步骤 2</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">搭一个清晰的创意板</h2>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {briefPresets.map((preset) => (
@@ -481,86 +624,92 @@ export function App() {
                       key={preset.label}
                       type="button"
                       onClick={() => applyPreset(preset)}
-                      className="rounded-full border border-white/10 px-4 py-2 text-sm text-stone-300 transition hover:border-amber-300/60 hover:text-amber-100"
+                      className="rounded-full border border-white/10 px-4 py-2 text-sm text-stone-300 transition hover:border-amber-300/60 hover:bg-amber-300/10 hover:text-amber-100"
                     >
-                      {preset.label}
+                      套用 {preset.label}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-stone-300">主体</span>
+                <label className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <span className="text-sm font-medium text-stone-200">主体</span>
+                  <p className="mt-1 text-xs leading-6 text-stone-500">视频里最重要的人、产品或物件</p>
                   <input
                     value={subject}
                     onChange={(event) => setSubject(event.target.value)}
-                    placeholder="视频里主要出现谁，或者什么产品、物体？"
-                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60"
+                    placeholder="例如：一瓶玻璃瓶护肤精华"
+                    className="mt-4 w-full border-none bg-transparent p-0 text-base text-stone-100 outline-none placeholder:text-stone-600"
                   />
                 </label>
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-stone-300">场景</span>
+
+                <label className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <span className="text-sm font-medium text-stone-200">场景</span>
+                  <p className="mt-1 text-xs leading-6 text-stone-500">发生地点、光线、空间质感</p>
                   <input
                     value={scene}
                     onChange={(event) => setScene(event.target.value)}
-                    placeholder="故事发生在哪里，整体应该是什么感觉？"
-                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60"
+                    placeholder="例如：晨光照进极简梳妆台"
+                    className="mt-4 w-full border-none bg-transparent p-0 text-base text-stone-100 outline-none placeholder:text-stone-600"
                   />
                 </label>
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-stone-300">风格</span>
+
+                <label className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <span className="text-sm font-medium text-stone-200">风格</span>
+                  <p className="mt-1 text-xs leading-6 text-stone-500">情绪、镜头感觉、整体审美</p>
                   <input
                     value={tone}
                     onChange={(event) => setTone(event.target.value)}
-                    placeholder="比如高级、情绪化、活泼、电影感……"
-                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60"
+                    placeholder="例如：高级、安静、电影感"
+                    className="mt-4 w-full border-none bg-transparent p-0 text-base text-stone-100 outline-none placeholder:text-stone-600"
                   />
                 </label>
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-stone-300">受众</span>
+
+                <label className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <span className="text-sm font-medium text-stone-200">受众</span>
+                  <p className="mt-1 text-xs leading-6 text-stone-500">这条视频主要打动谁</p>
                   <input
                     value={audience}
                     onChange={(event) => setAudience(event.target.value)}
-                    placeholder="这条视频主要想打动哪类人？"
-                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60"
+                    placeholder="例如：关注生活方式的年轻女性"
+                    className="mt-4 w-full border-none bg-transparent p-0 text-base text-stone-100 outline-none placeholder:text-stone-600"
                   />
                 </label>
               </div>
 
               <div className="mt-4 grid gap-4">
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-stone-300">核心画面顺序</span>
+                <label className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <span className="text-sm font-medium text-stone-200">核心画面顺序</span>
+                  <p className="mt-1 text-xs leading-6 text-stone-500">按顺序写下最想看到的 2 到 4 个关键画面</p>
                   <textarea
                     value={hook}
                     onChange={(event) => setHook(event.target.value)}
-                    placeholder="按大概顺序描述你想看到的几个关键画面。"
-                    className="min-h-28 w-full rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60"
+                    placeholder="例如：先展示产品英雄镜头，再切质地特写，最后展示自然使用场景。"
+                    className="mt-4 min-h-28 w-full resize-none border-none bg-transparent p-0 text-base text-stone-100 outline-none placeholder:text-stone-600"
                   />
                 </label>
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-stone-300">补充要求</span>
+
+                <label className="rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
+                  <span className="text-sm font-medium text-stone-200">补充要求</span>
+                  <p className="mt-1 text-xs leading-6 text-stone-500">比如结尾情绪、品牌落点、人物状态等</p>
                   <textarea
                     value={details}
                     onChange={(event) => setDetails(event.target.value)}
-                    placeholder="可以补充结尾氛围、产品重点、人物情绪等信息。"
-                    className="min-h-24 w-full rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-3 text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60"
+                    placeholder="例如：结尾停在安静、干净、有高级感的产品镜头。"
+                    className="mt-4 min-h-24 w-full resize-none border-none bg-transparent p-0 text-base text-stone-100 outline-none placeholder:text-stone-600"
                   />
                 </label>
               </div>
 
-              <div className="mt-6 rounded-[1.75rem] border border-amber-300/20 bg-amber-300/8 p-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.28em] text-amber-100/70">
-                      预览
-                    </p>
-                    <p className="mt-3 max-w-3xl text-sm leading-7 text-stone-200">
-                      {composedScript}
-                    </p>
+              <div className="mt-6 rounded-[1.75rem] border border-amber-300/20 bg-amber-300/8 p-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="max-w-3xl">
+                    <p className="text-xs uppercase tracking-[0.25em] text-amber-100/75">系统预览</p>
+                    <p className="mt-3 text-sm leading-7 text-stone-200">{composedScript}</p>
                   </div>
-                  <div className="min-w-44 rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <p className="text-xs uppercase tracking-[0.24em] text-stone-500">生成方式</p>
+                  <div className="min-w-52 rounded-[1.25rem] border border-white/10 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-stone-500">生成方式</p>
                     <select
                       value={effectiveStrategy}
                       onChange={(event) =>
@@ -570,8 +719,15 @@ export function App() {
                     >
                       <option value="single">快速短片</option>
                       <option value="extend">连续续写</option>
-                      <option value="storyboard">分镜式生成</option>
+                      <option value="storyboard">分镜生成</option>
                     </select>
+                    <p className="mt-3 text-xs leading-6 text-stone-500">
+                      {effectiveStrategy === "extend"
+                        ? "更适合单场景连续叙事，强调镜头延续。"
+                        : effectiveStrategy === "storyboard"
+                          ? "更适合多个镜头段落组成的结构化视频。"
+                          : "更适合快速验证一个短视频创意。"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -580,128 +736,177 @@ export function App() {
             <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur md:p-7">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.32em] text-stone-500">步骤 3</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-stone-500">步骤 3</p>
                   <h2 className="mt-2 text-2xl font-semibold text-stone-50">上传参考图片</h2>
                 </div>
                 <p className="max-w-xl text-sm leading-6 text-stone-400">
-                  可以上传产品图、人物参考图、关键风格图，或者场景氛围图。三张高质量图片，通常比很多普通图片更有效。
+                  你可以上传产品图、人物图、风格参考图或场景氛围图。三张一致性高的图片，通常比很多杂乱图片更有帮助。
                 </p>
               </div>
 
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-amber-300/40 bg-amber-300/10 px-5 py-3 text-sm font-medium text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/15">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleReferenceImageChange}
-                    className="hidden"
-                    disabled={isUploading || uploadedImages.length >= 3}
-                  />
-                  {isUploading ? "上传中..." : "上传参考图片"}
-                </label>
-                <p className="text-sm text-stone-500">
-                  {uploadedImages.length < 3
-                    ? `还可以再上传 ${3 - uploadedImages.length} 张图片`
-                    : "参考图已上传满"}
-                </p>
-              </div>
+              <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="rounded-[1.75rem] border border-dashed border-white/10 bg-black/20 p-5">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-amber-300/40 bg-amber-300/10 px-5 py-3 text-sm font-medium text-amber-100 transition hover:border-amber-200 hover:bg-amber-300/15">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleReferenceImageChange}
+                        className="hidden"
+                        disabled={isUploading || uploadedImages.length >= 3}
+                      />
+                      {isUploading ? "上传中..." : "选择参考图片"}
+                    </label>
+                    <span className="text-sm text-stone-500">
+                      {uploadedImages.length < 3
+                        ? `还可以再上传 ${3 - uploadedImages.length} 张`
+                        : "参考图已上传满"}
+                    </span>
+                  </div>
 
-              {uploadedImages.length ? (
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  {uploadedImages.map((image) => (
-                    <article
-                      key={image.id}
-                      className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/25"
-                    >
-                      <img src={image.url} alt={image.filename} className="h-40 w-full object-cover" />
-                      <div className="space-y-3 p-4">
-                        <p className="truncate text-sm font-medium text-stone-200">{image.filename}</p>
-                        <button
-                          type="button"
-                          onClick={() => removeUploadedImage(image.id)}
-                          className="text-sm text-rose-300 transition hover:text-rose-200"
+                  {uploadedImages.length ? (
+                    <div className="mt-5 grid gap-4 md:grid-cols-3">
+                      {uploadedImages.map((image) => (
+                        <article
+                          key={image.id}
+                          className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/25"
                         >
-                          删除
-                        </button>
-                      </div>
-                    </article>
-                  ))}
+                          <img src={image.url} alt={image.filename} className="h-40 w-full object-cover" />
+                          <div className="flex items-center justify-between gap-3 p-4">
+                            <p className="truncate text-sm font-medium text-stone-200">
+                              {image.filename}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => removeUploadedImage(image.id)}
+                              className="text-sm text-rose-300 transition hover:text-rose-200"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-5 flex min-h-52 items-center justify-center rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.12),_transparent_35%),rgba(255,255,255,0.02)] p-6 text-center text-sm leading-7 text-stone-500">
+                      还没有上传图片。建议先放一张主体图，再补两张风格或场景图，让模型更容易对齐你的预期。
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="mt-6 rounded-[1.75rem] border border-dashed border-white/10 px-6 py-10 text-center text-sm leading-7 text-stone-500">
-                  如果你更想保证主体一致性，至少上传一张清晰主图；如果你还想控制风格和氛围，建议上传两到三张。
+
+                <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-5">
+                  <p className="text-xs uppercase tracking-[0.25em] text-stone-500">选图建议</p>
+                  <div className="mt-4 space-y-3 text-sm leading-7 text-stone-300">
+                    <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4">
+                      主体清晰可辨，不要被过多文字或杂乱背景干扰。
+                    </div>
+                    <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4">
+                      如果是产品类视频，最好包含一张近景图和一张生活方式图。
+                    </div>
+                    <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4">
+                      如果要做统一情绪感，尽量保持色调接近，不要混搭完全不同的画风。
+                    </div>
+                  </div>
                 </div>
-              )}
+              </div>
             </section>
           </div>
 
-          <aside className="space-y-6">
-            <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur md:p-6">
-              <p className="text-xs uppercase tracking-[0.32em] text-stone-500">步骤 4</p>
-              <h2 className="mt-2 text-2xl font-semibold text-stone-50">开始生成</h2>
-              <p className="mt-3 text-sm leading-6 text-stone-400">
-                点击一次即可把你的创意描述、模板版本和参考素材提交到后端生成流程中。
-              </p>
-
-              <div className="mt-6 grid gap-3">
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={isSubmitting || isUploading}
-                  className="rounded-full bg-amber-300 px-5 py-3 text-sm font-semibold text-stone-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300"
-                >
-                  {isSubmitting ? "正在提交任务..." : "一键生成视频"}
-                </button>
-                {error ? <p className="text-sm leading-6 text-rose-300">{error}</p> : null}
+          <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+            <section className="rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.24)] backdrop-blur md:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-stone-500">步骤 4</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">一键生成</h2>
+                </div>
+                <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
+                  {readyCount}/{readyChecks.length} 已完成
+                </div>
               </div>
 
-              <div className="mt-8 space-y-3">
-                {statusSteps.map((step, index) => {
-                  const isComplete = statusStepIndex >= index;
-                  const isCurrent = job?.status === step.key;
-
-                  return (
-                    <div key={step.key} className="flex items-center gap-3">
-                      <div
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          isComplete ? "bg-amber-300" : "bg-white/15"
-                        } ${isCurrent ? "shadow-[0_0_0_6px_rgba(252,211,77,0.12)]" : ""}`}
-                      />
-                      <p className={isComplete ? "text-stone-200" : "text-stone-500"}>{step.label}</p>
-                    </div>
-                  );
-                })}
+              <div className="mt-5 space-y-3">
+                {readyChecks.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-center justify-between rounded-[1.25rem] border border-white/10 bg-black/20 px-4 py-3"
+                  >
+                    <span className="text-sm text-stone-300">{item.label}</span>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs ${
+                        item.done
+                          ? "bg-emerald-300/15 text-emerald-100"
+                          : "bg-white/5 text-stone-500"
+                      }`}
+                    >
+                      {item.done ? "已完成" : "待补充"}
+                    </span>
+                  </div>
+                ))}
               </div>
+
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!canSubmit}
+                className="mt-6 w-full rounded-full bg-amber-300 px-5 py-4 text-sm font-semibold text-stone-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300"
+              >
+                {isSubmitting ? "正在提交任务..." : "立即生成视频"}
+              </button>
+
+              {error ? <p className="mt-4 text-sm leading-6 text-rose-300">{error}</p> : null}
             </section>
 
             <section className="rounded-[2rem] border border-white/10 bg-black/25 p-5 md:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                  <p className="text-xs uppercase tracking-[0.32em] text-stone-500">实时状态</p>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-stone-500">实时状态</p>
                   <h2 className="mt-2 text-2xl font-semibold text-stone-50">
                     {job ? getStatusLabel(job.status) : "等待中"}
                   </h2>
                 </div>
-                <p className={`text-sm font-medium ${getStatusTone(job?.status ?? "draft")}`}>
-                  {job ? getStatusLabel(job.status) : "当前没有活动任务"}
-                </p>
+                <span
+                  className={`rounded-full border px-3 py-1 text-xs ${getStatusBadge(
+                    job?.status ?? "draft"
+                  )}`}
+                >
+                  {job ? getStatusLabel(job.status) : "未开始"}
+                </span>
               </div>
 
               {job ? (
                 <div className="mt-5 space-y-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
-                      <p className="text-xs uppercase tracking-[0.24em] text-stone-500">任务 ID</p>
-                      <p className="mt-3 break-all text-sm text-stone-200">{job.id}</p>
-                    </div>
-                    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
-                      <p className="text-xs uppercase tracking-[0.24em] text-stone-500">
-                        平台任务号
-                      </p>
-                      <p className="mt-3 break-all text-sm text-stone-200">
-                        {job.providerTaskId ?? "等待分配中"}
-                      </p>
+                  <div className="grid gap-3">
+                    {statusSteps.map((step, index) => {
+                      const isComplete = statusStepIndex >= index;
+                      const isCurrent = job.status === step.key;
+
+                      return (
+                        <div key={step.key} className="flex items-center gap-3">
+                          <div
+                            className={`h-2.5 w-2.5 rounded-full ${
+                              isComplete ? "bg-amber-300" : "bg-white/15"
+                            } ${isCurrent ? "shadow-[0_0_0_6px_rgba(252,211,77,0.12)]" : ""}`}
+                          />
+                          <p className={isComplete ? "text-stone-200" : "text-stone-500"}>
+                            {step.label}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-stone-500">任务信息</p>
+                    <div className="mt-3 space-y-2 text-sm text-stone-300">
+                      <div>
+                        <span className="text-stone-500">任务 ID：</span>
+                        <span className="break-all">{job.id}</span>
+                      </div>
+                      <div>
+                        <span className="text-stone-500">平台任务号：</span>
+                        <span className="break-all">{job.providerTaskId ?? "等待分配中"}</span>
+                      </div>
                     </div>
                   </div>
 
@@ -710,19 +915,19 @@ export function App() {
                       {job.primaryScene.providerError}
                     </div>
                   ) : (
-                    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-stone-400">
+                    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4 text-sm leading-7 text-stone-400">
                       {job.status === "queued" && "任务已提交成功，正在等待平台开始处理。"}
-                      {job.status === "running" && "平台正在生成视频，这个页面会自动刷新状态。"}
+                      {job.status === "running" && "平台正在生成视频，这个页面会自动轮询并更新最新状态。"}
                       {job.status === "succeeded" &&
-                        "视频已经生成完成。如果结果已经回存到 COS，下方链接会直接指向你自己的存储地址。"}
+                        "视频已经生成完成。如果结果已回存到 COS，下方按钮将直接打开你的存储链接。"}
                       {job.status === "failed" &&
-                        "这次生成没有成功完成，你可以调整创意描述或更换模板后再试一次。"}
+                        "这次生成没有成功完成，建议先微调主体、场景或参考图后再次尝试。"}
                     </div>
                   )}
 
                   {currentResultUrl ? (
                     <div className="rounded-[1.5rem] border border-emerald-300/20 bg-emerald-300/10 p-4">
-                      <p className="text-xs uppercase tracking-[0.24em] text-emerald-100/75">生成结果</p>
+                      <p className="text-xs uppercase tracking-[0.2em] text-emerald-100/75">生成结果</p>
                       <div className="mt-3 flex flex-wrap gap-3">
                         <a
                           href={currentResultUrl}
@@ -745,16 +950,16 @@ export function App() {
                 </div>
               ) : (
                 <p className="mt-5 text-sm leading-7 text-stone-500">
-                  你提交任务后，这里会持续跟踪平台状态、片段进度以及最终的视频链接。
+                  提交任务后，这里会持续跟踪平台状态、片段进度和最终成片链接。
                 </p>
               )}
             </section>
 
             <section className="rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur md:p-6">
-              <div className="flex items-end justify-between">
+              <div className="flex items-end justify-between gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.32em] text-stone-500">最近任务</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">继续上次的创作</h2>
+                  <p className="text-xs uppercase tracking-[0.28em] text-stone-500">最近任务</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-stone-50">继续上次创作</h2>
                 </div>
               </div>
 
@@ -771,28 +976,29 @@ export function App() {
                           setJob(nextJob);
                         } catch (jobError) {
                           const message =
-                            jobError instanceof Error
-                              ? jobError.message
-                              : "加载所选任务失败。";
+                            jobError instanceof Error ? jobError.message : "加载所选任务失败。";
                           setError(message);
                         }
                       }}
-                      className="flex w-full flex-col gap-2 rounded-[1.5rem] border border-white/10 bg-black/20 p-4 text-left transition hover:border-white/20 hover:bg-white/[0.04]"
+                      className="flex w-full flex-col gap-3 rounded-[1.5rem] border border-white/10 bg-black/20 p-4 text-left transition hover:border-white/20 hover:bg-white/[0.04]"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-stone-100">{recentJob.templateName}</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-stone-100">{recentJob.templateName}</p>
+                          <p className="mt-1 text-xs text-stone-500">{formatTimeLabel(recentJob.updatedAt)}</p>
+                        </div>
                         <span className={`text-xs ${getStatusTone(recentJob.status)}`}>
                           {getStatusLabel(recentJob.status)}
                         </span>
                       </div>
-                      <p className="line-clamp-2 text-sm leading-6 text-stone-400">
+                      <p className="line-clamp-3 text-sm leading-6 text-stone-400">
                         {recentJob.scriptPreview}
                       </p>
                     </button>
                   ))
                 ) : (
                   <p className="text-sm leading-7 text-stone-500">
-                    在 MVP 阶段，即使没有账号系统，你最近的任务也会保存在当前设备里，方便你再次打开查看。
+                    在 MVP 阶段，即使没有账号系统，最近任务也会保存在当前设备里，方便你继续查看。
                   </p>
                 )}
               </div>
