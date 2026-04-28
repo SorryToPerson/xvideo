@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { MediaAssetsService } from "../media-assets/media-assets.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { SeedanceService } from "../providers/seedance/seedance.service";
 
@@ -8,7 +9,8 @@ type GenerationStrategy = "single" | "extend" | "storyboard";
 export class GenerationJobsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly seedanceService: SeedanceService
+    private readonly seedanceService: SeedanceService,
+    private readonly mediaAssetsService: MediaAssetsService
   ) {}
 
   async createJob(input: {
@@ -20,10 +22,22 @@ export class GenerationJobsService {
   }) {
     const prompt = `Create a video for: ${input.script}`;
     const referenceImageIds = input.referenceImageIds ?? [];
+    const referenceAssets = referenceImageIds.length
+      ? await this.prisma.mediaAsset.findMany({
+          where: {
+            id: { in: referenceImageIds }
+          }
+        })
+      : [];
+
+    const referenceImageUrls = referenceAssets.map((asset) =>
+      this.mediaAssetsService.getSignedAssetUrl(asset.storagePath)
+    );
 
     const providerResult = await this.seedanceService.createVideoTask({
       prompt,
-      strategy: input.strategy
+      strategy: input.strategy,
+      referenceImageUrls
     });
 
     return this.prisma.generationJob.create({

@@ -5,6 +5,7 @@ type GenerationStrategy = "single" | "extend" | "storyboard";
 export type SeedanceCreateTaskInput = {
   prompt: string;
   strategy: GenerationStrategy;
+  referenceImageUrls?: string[];
 };
 
 export type SeedanceTaskResponse = {
@@ -70,7 +71,14 @@ export class SeedanceService {
 
     const requestBody = {
       model: this.model,
-      content: [{ type: "text", text: input.prompt }]
+      content: [
+        ...(input.referenceImageUrls ?? []).map((url) => ({
+          type: "image_url",
+          image_url: { url },
+          role: "reference_image"
+        })),
+        { type: "text", text: input.prompt }
+      ]
     };
 
     const response = await fetch(this.buildUrl(), {

@@ -77,6 +77,10 @@ export class MediaAssetsService {
     });
   }
 
+  getSignedAssetUrl(storagePath: string) {
+    return this.createAccessibleUrl(storagePath);
+  }
+
   async createUploadedAsset(
     filename: string,
     mimeType: string,
