@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchTemplates, updateTemplate } from "./lib/api";
+import { createTemplateVersion, fetchTemplates, updateTemplate } from "./lib/api";
 
 type Template = {
   id: string;
@@ -7,7 +7,14 @@ type Template = {
   name: string;
   description: string;
   defaultStrategy: "single" | "extend" | "storyboard" | string;
-  versions?: Array<{ id: string }>;
+  versions?: Array<{
+    id: string;
+    versionNumber: number;
+    promptSkeleton: string;
+    inputSchemaJson: string;
+    strategyJson: string;
+    createdAt?: string;
+  }>;
 };
 
 const strategyMeta: Record<
@@ -92,9 +99,13 @@ export function App() {
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingVersion, setIsCreatingVersion] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
   const [draftStrategy, setDraftStrategy] = useState<"single" | "extend" | "storyboard">("single");
+  const [draftPromptSkeleton, setDraftPromptSkeleton] = useState("");
+  const [draftInputSchemaJson, setDraftInputSchemaJson] = useState("");
+  const [draftStrategyJson, setDraftStrategyJson] = useState("");
 
   useEffect(() => {
     fetchTemplates()
@@ -129,6 +140,15 @@ export function App() {
     setDraftName(selectedTemplate.name);
     setDraftDescription(selectedTemplate.description);
     setDraftStrategy(selectedTemplate.defaultStrategy as "single" | "extend" | "storyboard");
+    setDraftPromptSkeleton(selectedTemplate.versions?.[0]?.promptSkeleton ?? "");
+    setDraftInputSchemaJson(
+      selectedTemplate.versions?.[0]?.inputSchemaJson ??
+        JSON.stringify([{ key: "script", label: "创意脚本", type: "textarea", required: true }], null, 2)
+    );
+    setDraftStrategyJson(
+      selectedTemplate.versions?.[0]?.strategyJson ??
+        JSON.stringify({ allowed: ["single", "extend", "storyboard"] }, null, 2)
+    );
     setSaveMessage("");
   }, [selectedTemplate?.id]);
 
@@ -156,6 +176,33 @@ export function App() {
       setError(saveError instanceof Error ? saveError.message : "更新模板失败");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleCreateTemplateVersion() {
+    if (!selectedTemplate) {
+      return;
+    }
+
+    try {
+      setError("");
+      setSaveMessage("");
+      setIsCreatingVersion(true);
+
+      const updated = (await createTemplateVersion(selectedTemplate.id, {
+        promptSkeleton: draftPromptSkeleton,
+        inputSchemaJson: draftInputSchemaJson,
+        strategyJson: draftStrategyJson
+      })) as Template;
+
+      setTemplates((current) =>
+        current.map((template) => (template.id === updated.id ? updated : template))
+      );
+      setSaveMessage("已新增模板版本");
+    } catch (versionError) {
+      setError(versionError instanceof Error ? versionError.message : "创建模板版本失败");
+    } finally {
+      setIsCreatingVersion(false);
     }
   }
 
@@ -322,98 +369,182 @@ export function App() {
               </div>
 
               {selectedTemplate && selectedDisplay && selectedStrategy ? (
-                <div className="mt-5 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-                  <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.24em] text-stone-500">模板定位</p>
-                        <h3 className="mt-3 text-3xl font-medium text-stone-50">{selectedDisplay.name}</h3>
-                      </div>
-                      <span className={`rounded-full border px-3 py-1 text-xs ${selectedStrategy.chipClass}`}>
-                        {selectedStrategy.label}
-                      </span>
-                    </div>
-
-                    <p className="mt-5 text-sm leading-7 text-stone-300">{selectedDisplay.description}</p>
-
-                    <div className="mt-6 grid gap-3 md:grid-cols-2">
-                      <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 md:col-span-2">
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板名称</p>
-                        <input
-                          value={draftName}
-                          onChange={(event) => setDraftName(event.target.value)}
-                          className="mt-3 w-full border-none bg-transparent p-0 text-lg text-stone-100 outline-none"
-                        />
-                      </label>
-
-                      <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 md:col-span-2">
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板描述</p>
-                        <textarea
-                          value={draftDescription}
-                          onChange={(event) => setDraftDescription(event.target.value)}
-                          className="mt-3 min-h-28 w-full resize-none border-none bg-transparent p-0 text-sm leading-7 text-stone-300 outline-none"
-                        />
-                      </label>
-
-                      <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">默认策略</p>
-                        <select
-                          value={draftStrategy}
-                          onChange={(event) =>
-                            setDraftStrategy(event.target.value as "single" | "extend" | "storyboard")
-                          }
-                          className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-stone-100 outline-none"
-                        >
-                          <option value="single">快速短片</option>
-                          <option value="extend">连续续写</option>
-                          <option value="storyboard">分镜生成</option>
-                        </select>
-                      </label>
-
-                      <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板版本</p>
-                        <p className="mt-3 text-2xl font-medium text-stone-100">
-                          {selectedTemplate.versions?.length ?? 0}
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-stone-400">
-                          第一版先支持模板基础信息维护，后续再补版本编辑。
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={handleSaveTemplate}
-                        disabled={isSaving}
-                        className="rounded-full bg-amber-300 px-5 py-3 text-sm font-medium text-stone-950 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300"
-                      >
-                        {isSaving ? "保存中..." : "保存模板"}
-                      </button>
-                      {saveMessage ? <p className="text-sm text-emerald-300">{saveMessage}</p> : null}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-5">
-                    <p className="text-xs uppercase tracking-[0.24em] text-stone-500">运营检查清单</p>
-                    <div className="mt-4 space-y-3">
-                      {[
-                        "模板名称和描述是否足够让普通用户一眼看懂用途",
-                        "默认策略是否和视频结构匹配",
-                        "是否已经记录清楚模板版本变更原因",
-                        "参考图规则是否适合当前模板的主体一致性要求"
-                      ].map((item) => (
-                        <div
-                          key={item}
-                          className="flex items-start gap-3 rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 text-sm leading-7 text-stone-300"
-                        >
-                          <span className="mt-2 h-2.5 w-2.5 rounded-full bg-amber-300" />
-                          <span>{item}</span>
+                <>
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                    <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.24em] text-stone-500">模板定位</p>
+                          <h3 className="mt-3 text-3xl font-medium text-stone-50">{selectedDisplay.name}</h3>
                         </div>
-                      ))}
+                        <span className={`rounded-full border px-3 py-1 text-xs ${selectedStrategy.chipClass}`}>
+                          {selectedStrategy.label}
+                        </span>
+                      </div>
+
+                      <p className="mt-5 text-sm leading-7 text-stone-300">{selectedDisplay.description}</p>
+
+                      <div className="mt-6 grid gap-3 md:grid-cols-2">
+                        <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 md:col-span-2">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板名称</p>
+                          <input
+                            value={draftName}
+                            onChange={(event) => setDraftName(event.target.value)}
+                            className="mt-3 w-full border-none bg-transparent p-0 text-lg text-stone-100 outline-none"
+                          />
+                        </label>
+
+                        <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 md:col-span-2">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板描述</p>
+                          <textarea
+                            value={draftDescription}
+                            onChange={(event) => setDraftDescription(event.target.value)}
+                            className="mt-3 min-h-28 w-full resize-none border-none bg-transparent p-0 text-sm leading-7 text-stone-300 outline-none"
+                          />
+                        </label>
+
+                        <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">默认策略</p>
+                          <select
+                            value={draftStrategy}
+                            onChange={(event) =>
+                              setDraftStrategy(event.target.value as "single" | "extend" | "storyboard")
+                            }
+                            className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-stone-100 outline-none"
+                          >
+                            <option value="single">快速短片</option>
+                            <option value="extend">连续续写</option>
+                            <option value="storyboard">分镜生成</option>
+                          </select>
+                        </label>
+
+                        <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">模板版本</p>
+                          <p className="mt-3 text-2xl font-medium text-stone-100">
+                            {selectedTemplate.versions?.length ?? 0}
+                          </p>
+                          <p className="mt-2 text-sm leading-6 text-stone-400">
+                            当前支持新增版本记录，用于沉淀 prompt 和策略的迭代历史。
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={handleSaveTemplate}
+                          disabled={isSaving}
+                          className="rounded-full bg-amber-300 px-5 py-3 text-sm font-medium text-stone-950 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300"
+                        >
+                          {isSaving ? "保存中..." : "保存模板"}
+                        </button>
+                        {saveMessage ? <p className="text-sm text-emerald-300">{saveMessage}</p> : null}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-5">
+                      <p className="text-xs uppercase tracking-[0.24em] text-stone-500">运营检查清单</p>
+                      <div className="mt-4 space-y-3">
+                        {[
+                          "模板名称和描述是否足够让普通用户一眼看懂用途",
+                          "默认策略是否和视频结构匹配",
+                          "是否已经记录清楚模板版本变更原因",
+                          "参考图规则是否适合当前模板的主体一致性要求"
+                        ].map((item) => (
+                          <div
+                            key={item}
+                            className="flex items-start gap-3 rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4 text-sm leading-7 text-stone-300"
+                          >
+                            <span className="mt-2 h-2.5 w-2.5 rounded-full bg-amber-300" />
+                            <span>{item}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
+
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                    <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-5">
+                      <div className="flex items-end justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.24em] text-stone-500">版本编辑器</p>
+                          <h3 className="mt-2 text-2xl font-medium text-stone-50">新增模板版本</h3>
+                        </div>
+                        <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
+                          基于当前模板
+                        </span>
+                      </div>
+
+                      <div className="mt-5 grid gap-4">
+                        <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">Prompt 骨架</p>
+                          <textarea
+                            value={draftPromptSkeleton}
+                            onChange={(event) => setDraftPromptSkeleton(event.target.value)}
+                            className="mt-3 min-h-32 w-full resize-none border-none bg-transparent p-0 text-sm leading-7 text-stone-300 outline-none"
+                          />
+                        </label>
+
+                        <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">输入结构 JSON</p>
+                          <textarea
+                            value={draftInputSchemaJson}
+                            onChange={(event) => setDraftInputSchemaJson(event.target.value)}
+                            className="mt-3 min-h-40 w-full resize-none border-none bg-transparent p-0 font-mono text-xs leading-6 text-stone-300 outline-none"
+                          />
+                        </label>
+
+                        <label className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.2em] text-stone-500">策略 JSON</p>
+                          <textarea
+                            value={draftStrategyJson}
+                            onChange={(event) => setDraftStrategyJson(event.target.value)}
+                            className="mt-3 min-h-28 w-full resize-none border-none bg-transparent p-0 font-mono text-xs leading-6 text-stone-300 outline-none"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-6 flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={handleCreateTemplateVersion}
+                          disabled={isCreatingVersion}
+                          className="rounded-full border border-amber-300/40 bg-amber-300/10 px-5 py-3 text-sm font-medium text-amber-100 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-stone-500"
+                        >
+                          {isCreatingVersion ? "创建中..." : "新增版本"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-5">
+                      <p className="text-xs uppercase tracking-[0.24em] text-stone-500">版本历史</p>
+                      <div className="mt-4 space-y-3">
+                        {selectedTemplate.versions?.length ? (
+                          selectedTemplate.versions.map((version) => (
+                            <div
+                              key={version.id}
+                              className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] p-4"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-medium text-stone-100">
+                                  版本 {version.versionNumber}
+                                </p>
+                                <span className="text-xs text-stone-500">
+                                  {version.createdAt ? new Date(version.createdAt).toLocaleDateString("zh-CN") : "已创建"}
+                                </span>
+                              </div>
+                              <p className="mt-3 line-clamp-3 text-sm leading-7 text-stone-400">
+                                {version.promptSkeleton}
+                              </p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm leading-7 text-stone-500">还没有版本记录。</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
               ) : (
                 <div className="mt-5 rounded-[1.75rem] border border-dashed border-white/10 p-6 text-sm leading-7 text-stone-500">
                   选中一个模板后，这里会展示更完整的运营视图。

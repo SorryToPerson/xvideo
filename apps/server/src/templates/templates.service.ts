@@ -9,8 +9,7 @@ export class TemplatesService {
     return this.prisma.template.findMany({
       include: {
         versions: {
-          orderBy: { versionNumber: "desc" },
-          take: 1
+          orderBy: { versionNumber: "desc" }
         }
       },
       orderBy: { createdAt: "asc" }
@@ -34,8 +33,42 @@ export class TemplatesService {
       },
       include: {
         versions: {
-          orderBy: { versionNumber: "desc" },
-          take: 1
+          orderBy: { versionNumber: "desc" }
+        }
+      }
+    });
+  }
+
+  async createTemplateVersion(
+    templateId: string,
+    input: {
+      promptSkeleton: string;
+      inputSchemaJson: string;
+      strategyJson: string;
+    }
+  ) {
+    const latestVersion = await this.prisma.templateVersion.findFirst({
+      where: { templateId },
+      orderBy: { versionNumber: "desc" }
+    });
+
+    const nextVersionNumber = (latestVersion?.versionNumber ?? 0) + 1;
+
+    await this.prisma.templateVersion.create({
+      data: {
+        templateId,
+        versionNumber: nextVersionNumber,
+        promptSkeleton: input.promptSkeleton,
+        inputSchemaJson: input.inputSchemaJson,
+        strategyJson: input.strategyJson
+      }
+    });
+
+    return this.prisma.template.findUnique({
+      where: { id: templateId },
+      include: {
+        versions: {
+          orderBy: { versionNumber: "desc" }
         }
       }
     });

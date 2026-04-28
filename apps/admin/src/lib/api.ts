@@ -40,3 +40,26 @@ export async function updateTemplate(
 
   return response.json();
 }
+
+export async function createTemplateVersion(
+  id: string,
+  payload: {
+    promptSkeleton: string;
+    inputSchemaJson: string;
+    strategyJson: string;
+  }
+) {
+  const response = await fetch(`http://localhost:3001/api/templates/${id}/versions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "创建模板版本失败"));
+  }
+
+  return response.json();
+}
