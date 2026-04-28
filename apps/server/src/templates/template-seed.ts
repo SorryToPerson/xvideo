@@ -1,6 +1,6 @@
 export const defaultTemplateSeed = {
-  name: "Product Seeding",
+  name: "产品种草短片",
   slug: "product-seeding",
-  description: "A guided short product promo template for ordinary users.",
+  description: "适合普通用户快速制作产品展示和种草类短视频。",
   defaultStrategy: "single"
 };

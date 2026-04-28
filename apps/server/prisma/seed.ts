@@ -5,11 +5,14 @@ const prisma = new PrismaClient();
 async function main() {
   const template = await prisma.template.upsert({
     where: { slug: "product-seeding" },
-    update: {},
+    update: {
+      name: "产品种草短片",
+      description: "适合普通用户快速制作产品展示和种草类短视频。"
+    },
     create: {
-      name: "Product Seeding",
+      name: "产品种草短片",
       slug: "product-seeding",
-      description: "Simple promo template for product storytelling.",
+      description: "适合普通用户快速制作产品展示和种草类短视频。",
       defaultStrategy: "single"
     }
   });
@@ -26,9 +29,9 @@ async function main() {
       data: {
         templateId: template.id,
         versionNumber: 1,
-        promptSkeleton: "Create a cinematic product video using the script and references.",
+        promptSkeleton: "根据用户脚本和参考图，生成一条有质感的产品视频。",
         inputSchemaJson: JSON.stringify([
-          { key: "script", label: "Script", type: "textarea", required: true }
+          { key: "script", label: "创意脚本", type: "textarea", required: true }
         ]),
         strategyJson: JSON.stringify({ allowed: ["single", "extend", "storyboard"] })
       }

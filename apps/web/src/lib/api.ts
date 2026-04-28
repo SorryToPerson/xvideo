@@ -20,7 +20,7 @@ async function parseErrorMessage(response: Response, fallbackMessage: string) {
 export async function fetchTemplates() {
   const response = await fetch("http://localhost:3001/api/templates");
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Failed to load templates"));
+    throw new Error(await parseErrorMessage(response, "加载模板失败"));
   }
 
   return response.json();
@@ -40,7 +40,7 @@ export async function createGenerationJob(payload: {
   });
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Failed to create generation job"));
+    throw new Error(await parseErrorMessage(response, "创建生成任务失败"));
   }
 
   return response.json();
@@ -56,7 +56,7 @@ export async function uploadReferenceImage(file: File) {
   });
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Failed to upload reference image"));
+    throw new Error(await parseErrorMessage(response, "上传参考图片失败"));
   }
 
   return response.json() as Promise<{
@@ -70,7 +70,7 @@ export async function uploadReferenceImage(file: File) {
 export async function fetchGenerationJob(id: string) {
   const response = await fetch(`http://localhost:3001/api/generation-jobs/${id}`);
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Failed to fetch generation job"));
+    throw new Error(await parseErrorMessage(response, "获取生成任务失败"));
   }
 
   return response.json();
